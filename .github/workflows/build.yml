@@ -1,0 +1,44 @@
+name: Build BTCSignalApp Setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Restore (NuGet)
+        run: dotnet restore .\BTCSignalApp\BTCSignalApp.csproj --configfile ".\nuget.config"
+
+      - name: Publish Self-contained Single EXE
+        run: dotnet publish .\BTCSignalApp\BTCSignalApp.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeAllContentForSelfExtract=true /p:PublishTrimmed=false -o .\build\publish
+
+      - name: Build Installer (Inno Setup)
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppPublishDir=$(Resolve-Path .\build\publish)" "/DAppVersion=1.0.0" ".\installer\BTCSignalApp.iss"
+
+      - name: Collect Setup.exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .\App | Out-Null
+          $setup = Get-ChildItem .\installer -Filter "BTCSignalApp_Setup_*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          Copy-Item $setup.FullName .\App\BTCSignalApp_Setup_1.0.0.exe -Force
+
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTCSignalApp_Setup
+          path: App/BTCSignalApp_Setup_1.0.0.exe
